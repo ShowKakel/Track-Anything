@@ -115,7 +115,7 @@ def get_frames_from_video(video_input, video_state):
     model.samcontroler.sam_controler.reset_image() 
     model.samcontroler.sam_controler.set_image(video_state["origin_images"][0])
     return video_state, video_info, video_state["origin_images"][0], gr.update(visible=True, maximum=len(frames), value=1), gr.update(visible=True, maximum=len(frames), value=len(frames)), \
-                        gr.update(visible=True),\
+                        gr.update(visible=True), gr.update(visible=True), \
                         gr.update(visible=True), gr.update(visible=True), \
                         gr.update(visible=True), gr.update(visible=True), \
                         gr.update(visible=True), gr.update(visible=True), \
@@ -123,7 +123,7 @@ def get_frames_from_video(video_input, video_state):
                         gr.update(visible=True, value=operation_log)
 
 def run_example(example):
-    return video_input
+    return example
 # get the select frame from gradio slider
 def select_template(image_selection_slider, video_state, interactive_state, mask_dropdown):
 
@@ -389,6 +389,33 @@ title = """<p><h1 align="center">Track-Anything</h1></p>
     """
 description = """<p>Gradio demo for Track Anything, a flexible and interactive tool for video object tracking, segmentation, and inpainting. I To use it, simply upload your video, or click one of the examples to load them. Code: <a href="https://github.com/gaomingqi/Track-Anything">https://github.com/gaomingqi/Track-Anything</a> <a href="https://huggingface.co/spaces/watchtowerss/Track-Anything?duplicate=true"><img style="display: inline; margin-top: 0em; margin-bottom: 0em" src="https://bit.ly/3gLdBN6" alt="Duplicate Space" /></a></p>"""
 
+def cutout_black_video(video_state, interactive_state, mask_dropdown):
+
+    operation_log = [("",""), ("Cutout (black background)","Normal")]
+
+    frames = np.asarray(video_state["origin_images"])     # (T, H, W, 3) uint8
+    fps = video_state["fps"]
+    masks_all = np.asarray(video_state["masks"])          # (T, H, W)  0=BG, 1..k
+
+    if len(mask_dropdown) == 0:
+        mask_dropdown = ["mask_001"]  
+
+    
+    mask_dropdown.sort()
+    keep_ids = [int(name.split("_")[1]) for name in mask_dropdown]
+
+
+    keep_mask = np.isin(masks_all, keep_ids).astype(np.uint8)     # (T,H,W), {0,1}
+
+    
+    cutout = frames * keep_mask[..., None]                        
+
+    
+    out_path = "./result/cutout/{}".format(video_state["video_name"])
+    video_output = generate_video_from_frames(cutout, output_path=out_path, fps=fps)
+
+    return video_output, operation_log
+
 
 with gr.Blocks() as iface:
     """
@@ -467,6 +494,7 @@ with gr.Blocks() as iface:
                     with gr.Row():
                         tracking_video_predict_button = gr.Button(value="Tracking", visible=False)
                         inpaint_video_predict_button = gr.Button(value="Inpainting", visible=False)
+                        cutout_video_button = gr.Button(value="Cutout (Black BG)", visible=False)
 
     # first step: get the video information 
     extract_frames_button.click(
@@ -476,7 +504,7 @@ with gr.Blocks() as iface:
         ],
         outputs=[video_state, video_info, template_frame,
                  image_selection_slider, track_pause_number_slider,point_prompt, clear_button_click, Add_mask_button, template_frame,
-                 tracking_video_predict_button, video_output, mask_dropdown, remove_mask_button, inpaint_video_predict_button, run_status]
+                 tracking_video_predict_button, video_output, mask_dropdown, remove_mask_button, inpaint_video_predict_button,cutout_video_button, run_status]
     )   
 
     # second step: select images from slider
@@ -563,7 +591,7 @@ with gr.Blocks() as iface:
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), \
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), \
         gr.update(visible=False), gr.update(visible=False), gr.update(visible=False, value=[]), gr.update(visible=False), \
-        gr.update(visible=False), gr.update(visible=False)
+        gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
                         
         ),
         [],
@@ -574,7 +602,7 @@ with gr.Blocks() as iface:
             video_output,
             template_frame,
             tracking_video_predict_button, image_selection_slider , track_pause_number_slider,point_prompt, clear_button_click, 
-            Add_mask_button, template_frame, tracking_video_predict_button, video_output, mask_dropdown, remove_mask_button,inpaint_video_predict_button, run_status
+            Add_mask_button, template_frame, tracking_video_predict_button, video_output, mask_dropdown, remove_mask_button,inpaint_video_predict_button, cutout_video_button, run_status
         ],
         queue=False,
         show_progress=False)
@@ -597,6 +625,14 @@ with gr.Blocks() as iface:
         outputs=[video_input],
         # cache_examples=True,
     ) 
+
+    
+    cutout_video_button.click(
+    fn=cutout_black_video,
+    inputs=[video_state, interactive_state, mask_dropdown],
+    outputs=[video_output, run_status]
+    )
+
 iface.queue(concurrency_count=1)
 iface.launch(debug=True, enable_queue=True, server_port=args.port, server_name="0.0.0.0")
 # iface.launch(debug=True, enable_queue=True)
